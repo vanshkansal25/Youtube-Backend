@@ -281,10 +281,87 @@ const refreshAccessToken = asyncHandler(async(req,res)=>{
     }
 })
 
+
+const changeCurrentPassword = asyncHandler(async(req,res)=>{
+    const {oldPassword,newPassword} = req.body
+    // we can also add a field of confirm password mainly its done on frontend part 
+
+    const user = await User.findById(req.user?._id)
+    await user.isPasswordCorrect(oldPassword)
+
+    if(!isPasswordCorrect){
+        throw new ApiError (400,"Invalid Old Password")
+    }
+
+    user.password = newPassword
+    await user.save({validateBeforeSave:false})
+
+
+    return res.status(200).json(200,{},"Password changed successfully")
+    
+})
+
+const getCurrentUser = asyncHandler(async(req,res)=>{
+    return res.status(200).json(200
+        ,req.user
+        ,"User Fetched Successfully"
+    )
+})
+
+const updateAccountDetail = asyncHandler(async(req,res)=>{
+    const {fullName,email} =  req.body
+    // agr file update krani h to we have to make different controllers
+    if(!fullName || !email){
+        throw new ApiError(400,"These Fields Are required")
+    }
+     const user = await User.findByIdAndUpdate(req.user?._id,
+        {
+            $set:{
+                fullName : fullName,
+                email : email
+            }
+        },
+        {
+            new:true
+        }
+    ).select("-password")
+
+    return res.status(200).json(200,user,"account details updated successfully")
+    
+})
+
+const updateUserAvatar = asyncHandler(async(req,res)=>{
+    const avatarLocalPath = req.file?.path  //req.file thru multer middleware
+    // we can also save this avatarLocalPath directly to data base in case we are not using cloudinary 
+    if(!avatarLocalPath){
+        throw new ApiError(400,"Avatar file is required")
+    }
+    const avatar = await uploadOnCloudinary(avatarLocalPath)
+
+    if(!avatar.url){
+        throw new ApiError(400,"Error while uploading avatar")
+    }
+
+    await User.findByIdAndUpdate(req.user?._id,
+        {
+            $set:{
+                avatar : avatar.url
+            }
+        },
+        {
+            new:true
+        }
+    ).select("-password")
+})
+
 export {registerUser
     ,loginUser
     ,logoutUser
     ,refreshAccessToken
+    ,changeCurrentPassword
+    ,getCurrentUser
+    ,updateAccountDetail
+    ,updateUserAvatar
 }
 
 
