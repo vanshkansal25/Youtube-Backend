@@ -297,7 +297,7 @@ const changeCurrentPassword = asyncHandler(async(req,res)=>{
     await user.save({validateBeforeSave:false})
 
 
-    return res.status(200).json(200,{},"Password changed successfully")
+    return res.status(200).json(new ApiResponse(200,{}, "Password changed successfully"))
     
 })
 
@@ -326,7 +326,7 @@ const updateAccountDetail = asyncHandler(async(req,res)=>{
         }
     ).select("-password")
 
-    return res.status(200).json(200,user,"account details updated successfully")
+    return res.status(200).json(new ApiResponse(200,user,"account details updated successfully"))
     
 })
 
@@ -338,11 +338,13 @@ const updateUserAvatar = asyncHandler(async(req,res)=>{
     }
     const avatar = await uploadOnCloudinary(avatarLocalPath)
 
+    //TODO: delete old avatar from cloudinary (make a utility function for this)
+
     if(!avatar.url){
         throw new ApiError(400,"Error while uploading avatar")
     }
 
-    await User.findByIdAndUpdate(req.user?._id,
+    const user = await User.findByIdAndUpdate(req.user?._id,
         {
             $set:{
                 avatar : avatar.url
@@ -352,7 +354,184 @@ const updateUserAvatar = asyncHandler(async(req,res)=>{
             new:true
         }
     ).select("-password")
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(200, user, "Avatar image updated successfully")
+    )
+    //TODO:after updating the avatar delete old avatar from cloudinary (make a utility function for this)
 })
+const updateUserCoverImage = asyncHandler(async(req,res)=>{
+    const coverImageLocalPath = req.file?.path  //req.file thru multer middleware
+    // we can also save this avatarLocalPath directly to data base in case we are not using cloudinary 
+    if(!coverImageLocalPath){
+        throw new ApiError(400,"CoverImage file is required")
+    }
+    const coverImage = await uploadOnCloudinary(coverImageLocalPath)
+
+    if(!coverImage.url){
+        throw new ApiError(400,"Error while uploading cover Image")
+    }
+
+    const user = await User.findByIdAndUpdate(req.user?._id,
+        {
+            $set:{
+                coverImage : coverImage.url
+            }
+        },
+        {
+            new:true
+        }
+    ).select("-password")
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(200, user, "Cover image updated successfully")
+    )
+})
+
+const getUserChannelProfile = asyncHandler(async(req,res)=>{
+    const {username} = req.params
+    if(!username?.trim()){
+        throw new ApiError(400,"Username is missing")
+    }
+    /* 
+    we can also use this to find user and then implement the aggregation pipeline to get the user channel profile
+    User.find({username}) 
+    */
+
+    //better way using match because match can do it in one go
+
+    const channel = await User.aggregate([
+        {
+            $match:{
+                username:username?.toLowerCase()
+            }
+        },
+        {
+            $lookup:{
+                from:"subscriptions",
+                localField:"_id",
+                foreignField:"channel",
+                as:"subscribers"
+            }
+        },
+        {
+            $lookup:{
+                from:"subscriptions",
+                localField:"_id",
+                foreignField:"subscriber",
+                as:"subscribedTo"
+            }
+        },
+        {
+            $addFields:{
+                subscribersCount:{
+                    $size:"$subscribers"
+                },
+                channelSubscribedToCount:{
+                    $size:"$subcribedTo"
+                },
+                isSubscribed:{
+                    $cond:{
+                        if:{$in:[req.user?._id,"$subscribers.subscriber"]},
+                        then:true,
+                        else:false
+                    }
+                }
+            }
+        },
+        {
+            $project:{
+                fullName:1,
+                username:1,
+                avatar:1,
+                coverImage:1,
+                subscribersCount:1,
+                channelSubscribedToCount:1
+            }
+        }
+    ])
+    //this channel will be an array of objects(promises)
+
+    if(!channel?.length){
+        throw new ApiError(404,"Channel Not Found")
+    }
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(
+            200,
+            channel[0],
+            "User Channel Fetched Successfully"
+        )
+    )
+
+   
+})
+
+const getWatchHistory = asyncHandler(async(req,res)=>{
+    const user = await User.aggregate([
+        {
+            $match:{
+                //_id:req.user?._id  -> this is wrong because here mongoose not able to inject ObjectID
+                _id: new mongoose.Types.ObjectId(req.user?._id)
+            }
+        },
+        {
+            $lookup:{
+                from:"videos",
+                localField:"watchHistory",
+                foreignField:"_id",
+                as:"watchHistory",
+                pipeline:[
+                    {
+                        $lookup:{
+                            from:"users",
+                            localField:"owner",
+                            foreignField:"_id",
+                            as:"owner",
+                            pipeline:[
+                                {
+                                    $project:{
+                                        fullName:1,
+                                        username:1,
+                                        avatar:1
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        $addFields:{
+                            owner:{
+                                $first: "$owner"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ])
+
+
+    return res
+    .status(200)
+    .json(
+        new ApiResponse(
+            200,
+            user[0].watchHistory,
+            "User History fetched successfully"
+        )
+
+    )
+})
+
+
+
+ 
 
 export {registerUser
     ,loginUser
@@ -362,6 +541,9 @@ export {registerUser
     ,getCurrentUser
     ,updateAccountDetail
     ,updateUserAvatar
+    ,updateUserCoverImage
+    ,getUserChannelProfile
+    ,getWatchHistory
 }
 
 
