@@ -21,7 +21,7 @@ const videoSchema = new Schema({
         type:Number,//we can get it from cloudinary
         required : true,
     },
-    view:{
+    views:{
         type:Number,
         default:0
     },

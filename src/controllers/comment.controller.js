@@ -13,7 +13,7 @@ const getVideoComments = asyncHandler(async (req, res) => {
     if(!video){
         throw new ApiError(400,"Video Not found")
     }
-    const comments = Comment.aggregate([
+    const comments = await Comment.aggregate([
         {
             $match : {
                 video : new mongoose.Types.ObjectId(videoId)
