@@ -75,8 +75,14 @@ const registerUser = asyncHandler(async(req,res)=>{
     }
     const user = await User.create({
         fullName,
-        avatar:avatar.url,
-        coverImage: coverImage?.url || "",
+        avatar: {
+            public_id: avatar.public_id,
+            url: avatar.secure_url
+        },
+        coverImage: {
+            public_id: coverImage?.public_id || "",
+            url: coverImage?.secure_url || ""
+        },
         email,
         password,
         username : username.toLowerCase()
@@ -344,16 +350,26 @@ const updateUserAvatar = asyncHandler(async(req,res)=>{
         throw new ApiError(400,"Error while uploading avatar")
     }
 
-    const user = await User.findByIdAndUpdate(req.user?._id,
+    const user = await User.findById(req.user._id).select("avatar");
+
+    const avatarToDelete = user.avatar.public_id;
+
+    const updatedUser = await User.findByIdAndUpdate(
+        req.user?._id,
         {
-            $set:{
-                avatar : avatar.url
+            $set: {
+                avatar: {
+                    public_id: avatar.public_id,
+                    url: avatar.secure_url
+                }
             }
         },
-        {
-            new:true
-        }
-    ).select("-password")
+        { new: true }
+    ).select("-password");
+
+    if (avatarToDelete && updatedUser.avatar.public_id) {
+        await deleteOnCloudinary(avatarToDelete);
+    }
 
     return res
     .status(200)
@@ -374,16 +390,26 @@ const updateUserCoverImage = asyncHandler(async(req,res)=>{
         throw new ApiError(400,"Error while uploading cover Image")
     }
 
-    const user = await User.findByIdAndUpdate(req.user?._id,
+    const user = await User.findById(req.user._id).select("coverImage");
+
+    const coverImageToDelete = user.coverImage.public_id;
+
+    const updatedUser = await User.findByIdAndUpdate(
+        req.user?._id,
         {
-            $set:{
-                coverImage : coverImage.url
+            $set: {
+                coverImage: {
+                    public_id: coverImage.public_id,
+                    url: coverImage.secure_url
+                }
             }
         },
-        {
-            new:true
-        }
-    ).select("-password")
+        { new: true }
+    ).select("-password");
+
+    if (coverImageToDelete && updatedUser.coverImage.public_id) {
+        await deleteOnCloudinary(coverImageToDelete);
+    }
 
     return res
     .status(200)
@@ -412,10 +438,10 @@ const getUserChannelProfile = asyncHandler(async(req,res)=>{
         },
         {
             $lookup:{
-                from:"subscriptions",
-                localField:"_id",
-                foreignField:"channel",
-                as:"subscribers"
+                from:"subscriptions",//to join with
+                localField:"_id",//field from current model
+                foreignField:"channel",//field from where to match
+                as:"subscribers"//alias(array of object) of joined data
             }
         },
         {
